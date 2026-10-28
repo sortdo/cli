@@ -1,0 +1,111 @@
+# Builds and publishes a sortdo release when a vX.Y.Z tag is pushed. See .github/workflows/release.yml.
+version: 2
+project_name: sortdo
+
+before:
+  hooks:
+    - go vet ./...
+    - go test ./...
+
+builds:
+  - id: sortdo
+    binary: sortdo
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# Fixed names without the version, so https://github.com/sortdo/cli/releases/latest/download/<name> always works for
+# the install scripts and `sortdo update`.
+archives:
+  - id: sortdo
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "sortdo_{{ .Os }}_{{ .Arch }}"
+    files: [README.md, LICENSE]
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# The release notes come from CHANGELOG.md (--release-notes in the release workflow), never from commit messages.
+# Developer ID signing and notarization from Linux, once the Apple secrets exist. Until then the programs are unsigned:
+# files that curl and npm download carry no quarantine flag, and the Homebrew cask removes it, so macOS runs them.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+
+release:
+  github:
+    owner: sortdo
+    name: cli
+  footer: |
+    ---
+
+    Install or update:
+
+    - macOS and Linux: `curl -fsSL https://sort.do/install | bash`
+    - Windows: `irm https://sort.do/install.ps1 | iex`
+    - npm: `npm install -g sortdo`
+    - Homebrew: `brew install sortdo/tap/sortdo`
+    - winget: `winget install Sort.sortdo`
+    - Already installed: `sortdo update`
+
+    Check a download: `sha256sum -c checksums.txt --ignore-missing`, or `gh attestation verify <file> --repo sortdo/cli`.
+
+homebrew_casks:
+  - name: sortdo
+    binaries: [sortdo]
+    homepage: https://trysort.com/install
+    description: Sort from the command line
+    license: MIT
+    repository:
+      owner: sortdo
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: "{{ .Env.RELEASE_AUTHOR_NAME }}"
+      email: "{{ .Env.RELEASE_AUTHOR_EMAIL }}"
+    hooks:
+      post:
+        # Until the programs are notarized, remove the quarantine flag Homebrew sets, as GoReleaser shows.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/sortdo"]
+          end
+
+winget:
+  - name: sortdo
+    package_identifier: Sort.sortdo
+    publisher: Sort
+    publisher_url: https://trysort.com
+    homepage: https://trysort.com/install
+    short_description: Sort from the command line
+    license: MIT
+    release_notes_url: "https://github.com/sortdo/cli/releases/tag/v{{ .Version }}"
+    commit_author:
+      name: "{{ .Env.RELEASE_AUTHOR_NAME }}"
+      email: "{{ .Env.RELEASE_AUTHOR_EMAIL }}"
+    repository:
+      owner: sortdo
+      name: winget-pkgs
+      branch: "sortdo-{{ .Version }}"
+      token: "{{ .Env.WINGET_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

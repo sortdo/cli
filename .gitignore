@@ -1,0 +1,5 @@
+# Build output
+/dist/
+/npm-out/
+/sortdo
+/sortdo.exe
