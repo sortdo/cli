@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sortdo/cli/internal/client"
+	"github.com/sortdo/cli/internal/selfupdate"
 	"github.com/sortdo/cli/internal/store"
 )
 
@@ -75,6 +76,12 @@ The other page actions (publish, move, versions, restore-version, trash and more
   --dir <folder>    Install into this skills folder instead, for example .claude/skills in a project.
   skill print       Print the skill.`,
 			(*App).skill},
+		"uninstall": {"uninstall [--yes]", "Sign out and remove sortdo from this computer.",
+			`Signs out of every server, and removes the agent skill, the settings and the program. When npm, Homebrew or winget
+installed sortdo, it prints that tool's command to remove the program. It asks first in a terminal; elsewhere, give --yes.
+
+  --yes    Do not ask.`,
+			(*App).uninstall},
 		"version": {"version", "Print the version.", "", func(a *App, _ []string) error {
 			fmt.Fprintf(a.Stdout, "sortdo %s\n", a.Version)
 			return nil
@@ -83,7 +90,7 @@ The other page actions (publish, move, versions, restore-version, trash and more
 }
 
 func (a *App) workspaceName() string {
-	result, err := client.CallTool(a.origin, "manage_workspace", map[string]any{"action": "get"})
+	result, err := a.callTool("manage_workspace", map[string]any{"action": "get"})
 	if err != nil || result.IsError {
 		return ""
 	}
@@ -126,12 +133,22 @@ func (a *App) login(args []string) error {
 	if !f.bool("no-browser") && a.Interactive {
 		opened = openBrowser(pending.Link)
 	}
-	if opened {
+	switch {
+	case a.Out.On() && opened:
+		fmt.Fprintf(a.Stdout, "%s\n  %s\n", a.Out.Done("Opened the browser. If it did not open, visit:"), a.Out.Accent(pending.Link))
+	case opened:
 		fmt.Fprintf(a.Stdout, "Opened the browser. If it did not open, visit:\n  %s\n", pending.Link)
-	} else {
-		fmt.Fprintf(a.Stdout, "Open this link to sign in:\n  %s\n", pending.Link)
+	default:
+		fmt.Fprintf(a.Stdout, "Open this link to sign in:\n  %s\n", a.Out.Accent(pending.Link))
 	}
-	fmt.Fprintf(a.Stdout, "Allow Sort CLI only if the page shows the code %s.\nWaiting…\n", pending.UserCode)
+	if a.Out.On() {
+		fmt.Fprintf(a.Stdout, "  %s %s\n", a.Out.Tag(pending.UserCode), a.Out.Dim("Allow Sort CLI only if the page shows this code."))
+	} else {
+		fmt.Fprintf(a.Stdout, "Allow Sort CLI only if the page shows the code %s.\n", pending.UserCode)
+	}
+	if !a.Err.On() {
+		fmt.Fprintln(a.Stdout, "Waiting…")
+	}
 	return a.finishLogin(pending)
 }
 
@@ -149,7 +166,12 @@ func (a *App) loginPoll() error {
 }
 
 func (a *App) finishLogin(pending *store.Pending) error {
-	place, keychainError, err := client.PollDevice(a.origin, pending)
+	var place string
+	var keychainError error
+	err := a.wait("Waiting for you to allow Sort CLI in the browser…", func() (err error) {
+		place, keychainError, err = client.PollDevice(a.origin, pending)
+		return err
+	})
 	// The code is used up whatever the answer was; a stopped poll keeps it for the next try.
 	_ = store.SavePending(a.origin, nil)
 	if err != nil {
@@ -159,11 +181,15 @@ func (a *App) finishLogin(pending *store.Pending) error {
 	if keychainError != nil {
 		fmt.Fprintf(a.Stderr, "No OS keychain is available (%v). The sign-in is in %s, readable only by you.\n", keychainError, place)
 	}
+	signedIn := fmt.Sprintf("Signed in to %s.", a.origin)
 	if name := a.workspaceName(); name != "" {
-		fmt.Fprintf(a.Stdout, "Signed in to %s on %s.\n", name, a.origin)
-	} else {
-		fmt.Fprintf(a.Stdout, "Signed in to %s.\n", a.origin)
+		signedIn = fmt.Sprintf("Signed in to %s on %s.", name, a.origin)
 	}
+	if a.Out.On() {
+		fmt.Fprint(a.Stdout, "\n"+a.Out.Logo(signedIn, "Try: sortdo search <words>, or sortdo help")+"\n")
+		return nil
+	}
+	fmt.Fprintln(a.Stdout, signedIn)
 	return nil
 }
 
@@ -173,7 +199,7 @@ func (a *App) logout(args []string) error {
 	}
 	store.ClearCache(toolsCacheName, a.origin)
 	if client.Revoke(a.origin) {
-		fmt.Fprintln(a.Stdout, "Signed out.")
+		fmt.Fprintln(a.Stdout, a.Out.Done("Signed out."))
 	} else {
 		fmt.Fprintln(a.Stdout, "Not signed in.")
 	}
@@ -202,26 +228,47 @@ func (a *App) status(args []string) error {
 	if latest := latestKnownVersion(a.Version); latest != "" {
 		report["latestVersion"] = latest
 	}
+	if copies := selfupdate.Copies(os.Getenv("PATH"), executablePath()); len(copies) > 1 {
+		paths := make([]string, len(copies))
+		for i, copy := range copies {
+			paths[i] = copy.Path
+		}
+		report["installedCopies"] = paths
+	}
 	if a.json {
 		return a.printJSON(report)
 	}
-	fmt.Fprintf(a.Stdout, "sortdo %s\nServer: %s\n", a.Version, a.origin)
+	out := a.Out
+	rows := [][2]string{{"Version", a.Version}, {"Server", a.origin}}
 	if report["signedIn"] == true {
 		if name, ok := report["workspace"]; ok {
-			fmt.Fprintf(a.Stdout, "Workspace: %s\n", name)
+			rows = append(rows, [2]string{"Workspace", out.Bold(fmt.Sprint(name))})
 		}
-		fmt.Fprintf(a.Stdout, "Signed in: yes (token from %s)\n", report["tokenFrom"])
+		rows = append(rows, [2]string{"Signed in", fmt.Sprintf("%s (token from %s)", out.Green("yes"), report["tokenFrom"])})
 	} else if problem, ok := report["problem"]; ok {
-		fmt.Fprintf(a.Stdout, "Signed in: no. %s\n", problem)
+		rows = append(rows, [2]string{"Signed in", fmt.Sprintf("%s %s", out.Yellow("no."), problem)})
 	} else {
-		fmt.Fprintf(a.Stdout, "Signed in: no. Run: sortdo login%s\n", client.ServerFlag(a.origin))
+		rows = append(rows, [2]string{"Signed in", fmt.Sprintf("%s Run: sortdo login%s", out.Yellow("no."), client.ServerFlag(a.origin))})
 	}
 	if code, ok := report["pendingCode"]; ok {
-		fmt.Fprintf(a.Stdout, "Waiting sign-in: code %s. Finish it with: sortdo login poll%s\n", code, client.ServerFlag(a.origin))
+		rows = append(rows, [2]string{"Waiting sign-in", fmt.Sprintf("code %s. Finish it with: sortdo login poll%s", out.Bold(fmt.Sprint(code)), client.ServerFlag(a.origin))})
 	}
 	if latest, ok := report["latestVersion"]; ok {
-		fmt.Fprintf(a.Stdout, "Update: %s is available. Run: %s\n", latest, updateCommand())
+		rows = append(rows, [2]string{"Update", out.Yellow(fmt.Sprintf("%s is available. Run: %s", latest, updateCommand()))})
 	}
+	if out.On() {
+		var body strings.Builder
+		for _, row := range rows {
+			fmt.Fprintf(&body, "%s  %s\n", out.Dim(fmt.Sprintf("%-15s", row[0])), row[1])
+		}
+		fmt.Fprint(a.Stdout, out.Box("Sort", body.String(), a.Width))
+	} else {
+		fmt.Fprintf(a.Stdout, "sortdo %s\n", a.Version)
+		for _, row := range rows[1:] {
+			fmt.Fprintf(a.Stdout, "%s: %s\n", row[0], row[1])
+		}
+	}
+	fmt.Fprint(a.Stdout, a.copiesNote())
 	return nil
 }
 
@@ -242,7 +289,11 @@ func (a *App) tools(args []string) error {
 	if err != nil {
 		return err
 	}
-	tools, err := loadTools(a.origin, f.bool("refresh"))
+	var tools []client.Tool
+	err = a.wait("Loading commands…", func() (err error) {
+		tools, err = loadTools(a.origin, f.bool("refresh"))
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -254,7 +305,7 @@ func (a *App) tools(args []string) error {
 		if tool.Title != "" {
 			summary = tool.Title + ": " + summary
 		}
-		fmt.Fprintf(a.Stdout, "sortdo %-18s %s\n", commandName(tool.Name), summary)
+		fmt.Fprintf(a.Stdout, "sortdo %s %s\n", a.Out.Accent(fmt.Sprintf("%-18s", commandName(tool.Name))), summary)
 	}
 	fmt.Fprintln(a.Stdout, "\nHelp for one: sortdo <command> --help. Call one by its MCP name: sortdo call <tool> '<json>'")
 	return nil
@@ -280,7 +331,7 @@ func (a *App) call(args []string) error {
 			return err
 		}
 	}
-	result, err := client.CallTool(a.origin, f.words[0], arguments)
+	result, err := a.callTool(f.words[0], arguments)
 	if err != nil {
 		return err
 	}
@@ -296,7 +347,7 @@ func (a *App) search(args []string) error {
 	if query == "" {
 		return client.Errorf("Say what to search for: sortdo search <words>")
 	}
-	result, err := client.CallTool(a.origin, "search", map[string]any{"query": query})
+	result, err := a.callTool("search", map[string]any{"query": query})
 	if err != nil {
 		return err
 	}
@@ -327,7 +378,7 @@ func (a *App) read(args []string) error {
 	if len(f.words) != 1 {
 		return client.Errorf("Name one page: sortdo read <page id or URL>")
 	}
-	result, err := client.CallTool(a.origin, "fetch", map[string]any{"id": f.words[0]})
+	result, err := a.callTool("fetch", map[string]any{"id": f.words[0]})
 	if err != nil {
 		return err
 	}
@@ -357,6 +408,13 @@ func createdPageID(result *client.Result) string {
 }
 
 func (a *App) pages(args []string) error {
+	if len(args) == 0 && a.promptsAllowed() {
+		command, err := a.findToolCommand("pages")
+		if err != nil {
+			return err
+		}
+		return a.chooseAction("pages", command)
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
 		return client.Errorf("Choose an action: sortdo pages create, sortdo pages edit, or sortdo pages <action>. See: sortdo pages --help")
 	}
@@ -405,7 +463,7 @@ func (a *App) pageCreate(args []string) error {
 			arguments["content"] = content
 		}
 	}
-	created, err := client.CallTool(a.origin, "create_page", arguments)
+	created, err := a.callTool("create_page", arguments)
 	if err != nil {
 		return err
 	}
@@ -417,7 +475,7 @@ func (a *App) pageCreate(args []string) error {
 		// No page yet: the draft waits for a location, and the result above lists where it can go.
 		return client.Errorf("Not published: choose a location first, then run sortdo pages create --draft <id> --team <id> --publish")
 	}
-	published, err := client.CallTool(a.origin, "manage_pages", map[string]any{"action": "publish", "pageId": id})
+	published, err := a.callTool("manage_pages", map[string]any{"action": "publish", "pageId": id})
 	if err != nil {
 		return err
 	}
@@ -452,7 +510,7 @@ func (a *App) pageEdit(args []string) error {
 	if len(arguments) == 1 {
 		return client.Errorf("Say what to change: --replace <old> --with <new>, --edits '<json>' or --title <title>")
 	}
-	result, err := client.CallTool(a.origin, "update_page", arguments)
+	result, err := a.callTool("update_page", arguments)
 	if err != nil {
 		return err
 	}
@@ -467,7 +525,7 @@ func (a *App) approval(args []string) error {
 	if len(f.words) != 1 {
 		return client.Errorf("Give the approval id: sortdo approval <id>")
 	}
-	result, err := client.CallTool(a.origin, "get_approval", map[string]any{"approvalId": f.words[0]})
+	result, err := a.callTool("get_approval", map[string]any{"approvalId": f.words[0]})
 	if err != nil {
 		return err
 	}

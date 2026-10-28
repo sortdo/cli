@@ -1,6 +1,6 @@
 # sortdo
 
-Sort from the command line. Search, read and write your team's knowledge in [Sort](https://trysort.com), as you, with your permissions. It is built for people and for coding agents: every command prints plain text, `--json` prints data, and every tool on the Sort server is a command.
+Sort from the command line. Search, read and write your team's knowledge in [Sort](https://trysort.com), as you, with your permissions. It is built for people and for coding agents: in a terminal, results are readable tables; for pipes and agents, they are plain text; `--json` prints data; and every tool on the Sort server is a command.
 
 ## Install
 
@@ -12,7 +12,7 @@ brew install sortdo/tap/sortdo                 # Homebrew on macOS
 winget install Sort.sortdo                     # winget on Windows
 ```
 
-The install scripts download the release for your system from this repository, check its SHA-256 against `checksums.txt`, and install into your user folder (no sudo). Read them first: [install.sh](install/install.sh), [install.ps1](install/install.ps1). `sortdo update` updates a scripted install.
+The install scripts download the release for your system from this repository, check its SHA-256 against `checksums.txt`, and install into your user folder (no sudo). Read them first: [install.sh](install/install.sh), [install.ps1](install/install.ps1). `sortdo update` updates a scripted install, and `sortdo uninstall` removes sortdo.
 
 ## Start
 

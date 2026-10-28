@@ -8,6 +8,7 @@
 #   $env:SORTDO_VERSION = '1.2.3'       Install this version instead of the latest.
 #   $env:SORTDO_INSTALL_DIR = '<folder>' Install here instead.
 #   $env:SORTDO_INSTALL_SKILL = '1'      Install the agent skill without asking ('0' skips it).
+#   $env:SORTDO_RELEASES_URL = '<url>'   Download from this mirror of github.com/sortdo/cli instead (for tests and mirrors).
 
 function Install-Sortdo {
     $ErrorActionPreference = 'Stop'

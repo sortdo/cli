@@ -10,6 +10,7 @@
 #   SORTDO_INSTALL_DIR=<folder>   Install here instead of ~/.local/bin.
 #   SORTDO_NO_MODIFY_PATH=1       Do not add the folder to PATH in your shell profile.
 #   SORTDO_INSTALL_SKILL=1 or 0   Install the agent skill without asking, or skip it.
+#   SORTDO_RELEASES_URL=<url>     Download from this mirror of github.com/sortdo/cli instead (for tests and mirrors).
 set -eu
 
 REPO="${SORTDO_RELEASES_URL:-https://github.com/sortdo/cli}"
@@ -21,7 +22,7 @@ fail() { printf 'sortdo install: %s\n' "$*" >&2; exit 1; }
 
 download() {
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$2" "$1" 2>/dev/null || curl -fsSL --retry 3 -o "$2" "$1"
+        curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$2" "$1"
     elif command -v wget >/dev/null 2>&1; then
         wget -q -O "$2" "$1"
     else

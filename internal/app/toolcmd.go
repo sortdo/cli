@@ -14,6 +14,7 @@ import (
 
 	"github.com/sortdo/cli/internal/client"
 	"github.com/sortdo/cli/internal/store"
+	"github.com/sortdo/cli/internal/ui"
 )
 
 // Every tool the server lists is a command: manage_teams is `sortdo teams`, its action add_members is
@@ -376,27 +377,27 @@ func (command *toolCommand) resolveAction(word string) (string, bool) {
 }
 
 // help is the --help text of the command, or of one of its actions.
-func (command *toolCommand) help(action string) string {
+func (command *toolCommand) help(action string, style ui.Style) string {
 	var out strings.Builder
 	title := command.tool.Title
 	if title == "" {
 		title = command.tool.Name
 	}
-	fmt.Fprintf(&out, "sortdo %s — %s\n\n", command.name, title)
+	fmt.Fprintf(&out, "%s — %s\n\n", style.Bold("sortdo "+command.name), title)
 	fmt.Fprintln(&out, wrap(command.tool.Description, 0))
 	fmt.Fprintln(&out)
 	switch {
 	case action != "":
-		fmt.Fprintf(&out, "Usage: sortdo %s %s [options]\n", command.name, actionName(action))
+		fmt.Fprintf(&out, "%s sortdo %s %s [options]\n", style.Bold("Usage:"), command.name, actionName(action))
 	case len(command.actions) > 0:
-		fmt.Fprintf(&out, "Usage: sortdo %s <action> [options]\n\nActions:\n", command.name)
+		fmt.Fprintf(&out, "%s sortdo %s <action> [options]\n\n%s\n", style.Bold("Usage:"), command.name, style.Bold("Actions:"))
 		names := make([]string, len(command.actions))
 		for index, value := range command.actions {
 			names[index] = actionName(value)
 		}
 		fmt.Fprintln(&out, wrap(strings.Join(names, ", "), 2))
 	default:
-		fmt.Fprintf(&out, "Usage: sortdo %s [options]\n", command.name)
+		fmt.Fprintf(&out, "%s sortdo %s [options]\n", style.Bold("Usage:"), command.name)
 	}
 	options := command.options()
 	// For an action, the options whose description names it come first.
@@ -409,18 +410,18 @@ func (command *toolCommand) help(action string) string {
 		}
 	}
 	if len(first) > 0 {
-		fmt.Fprintf(&out, "\nOptions for %s:\n", actionName(action))
-		writeOptions(&out, first)
+		fmt.Fprintf(&out, "\n%s\n", style.Bold(fmt.Sprintf("Options for %s:", actionName(action))))
+		writeOptions(&out, first, style)
 		if len(rest) > 0 {
-			fmt.Fprintln(&out, "\nOther options:")
-			writeOptions(&out, rest)
+			fmt.Fprintf(&out, "\n%s\n", style.Bold("Other options:"))
+			writeOptions(&out, rest, style)
 		}
 	} else if len(rest) > 0 {
-		fmt.Fprintln(&out, "\nOptions:")
-		writeOptions(&out, rest)
+		fmt.Fprintf(&out, "\n%s\n", style.Bold("Options:"))
+		writeOptions(&out, rest, style)
 	}
-	fmt.Fprintln(&out, "\nAlso:")
-	writeRows(&out, [][2]string{
+	fmt.Fprintf(&out, "\n%s\n", style.Bold("Also:"))
+	writeRows(&out, style, [][2]string{
 		{"--args <json | - | @file>", "All arguments as one JSON object, from stdin with -, or from a file. Options above win."},
 		{"--<option>-file <path | ->", "Read a text option from a file, or from stdin with -."},
 		{"--json", "Print the tool's data as JSON."},
@@ -437,7 +438,7 @@ func mentions(description, action string) bool {
 	return false
 }
 
-func writeOptions(out *strings.Builder, options []option) {
+func writeOptions(out *strings.Builder, options []option, style ui.Style) {
 	rows := make([][2]string, 0, len(options))
 	for _, o := range options {
 		left := "--" + o.flag
@@ -456,18 +457,18 @@ func writeOptions(out *strings.Builder, options []option) {
 		}
 		rows = append(rows, [2]string{left, strings.TrimSpace(description)})
 	}
-	writeRows(out, rows)
+	writeRows(out, style, rows)
 }
 
-// writeRows prints two columns; long left sides put the description on the next line.
-func writeRows(out *strings.Builder, rows [][2]string) {
+// writeRows prints two columns, the left one in the accent color; long left sides put the description on the next line.
+func writeRows(out *strings.Builder, style ui.Style, rows [][2]string) {
 	const column = 30
 	for _, row := range rows {
 		if len(row[0]) <= column-4 {
 			text := wrap(row[1], column)
-			fmt.Fprintf(out, "  %-*s%s\n", column-2, row[0], strings.TrimLeft(text, " "))
+			fmt.Fprintf(out, "  %s%s\n", style.Accent(fmt.Sprintf("%-*s", column-2, row[0])), strings.TrimLeft(text, " "))
 		} else {
-			fmt.Fprintf(out, "  %s\n%s\n", row[0], wrap(row[1], column))
+			fmt.Fprintf(out, "  %s\n%s\n", style.Accent(row[0]), wrap(row[1], column))
 		}
 	}
 }

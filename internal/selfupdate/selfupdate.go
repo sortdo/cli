@@ -118,6 +118,69 @@ func (m Method) Command() string {
 	return "sortdo update"
 }
 
+// UninstallCommand removes a copy that npm, Homebrew or winget installed.
+func (m Method) UninstallCommand() string {
+	switch m {
+	case Npm:
+		return "npm uninstall -g sortdo"
+	case Homebrew:
+		return "brew uninstall sortdo"
+	case Winget:
+		return "winget uninstall Sort.sortdo"
+	}
+	return ""
+}
+
+// Copy is one sortdo on PATH.
+type Copy struct {
+	Path string // as PATH finds it
+	Self bool   // the program that runs now
+}
+
+// Copies lists the sortdo programs on PATH, first to last: a shell runs the first one. Links count once, and npm's
+// launcher counts as the program it starts.
+func Copies(pathList, self string) []Copy {
+	name := "sortdo"
+	if runtime.GOOS == "windows" {
+		name = "sortdo.exe"
+	}
+	selfKey := copyKey(self)
+	var copies []Copy
+	seen := map[string]bool{}
+	for _, dir := range filepath.SplitList(pathList) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		resolved := candidate
+		if target, err := filepath.EvalSymlinks(candidate); err == nil {
+			resolved = target
+		}
+		key := copyKey(resolved)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		copies = append(copies, Copy{Path: candidate, Self: key == selfKey})
+	}
+	return copies
+}
+
+func copyKey(path string) string {
+	normalized := strings.ReplaceAll(filepath.Clean(path), `\`, "/")
+	if runtime.GOOS != "linux" {
+		normalized = strings.ToLower(normalized)
+	}
+	if at := strings.Index(normalized, "/node_modules/sortdo/"); at >= 0 {
+		return normalized[:at+len("/node_modules/sortdo")]
+	}
+	return normalized
+}
+
 // AssetName is the release archive for this system.
 func AssetName(goos, goarch string) string {
 	if goos == "windows" {

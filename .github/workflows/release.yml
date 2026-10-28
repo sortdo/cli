@@ -60,10 +60,6 @@ jobs:
       # npm trusted publishing (OIDC, no token) needs npm 11.5.1 or later; it adds provenance on its own.
       - run: npm install -g npm@11
       - name: Publish to npm
-        env:
-          # Only for the first release, before the packages exist and their trusted publisher is set on npmjs.com.
-          # Delete the NPM_TOKEN secret afterwards; trusted publishing needs no token.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           node npm/build.mjs dist "${GITHUB_REF_NAME#v}" npm-out
           # A leading ./ makes npm read a folder; "npm-out/sortdo" alone is read as a GitHub repository.

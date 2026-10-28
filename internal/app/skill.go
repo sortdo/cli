@@ -31,7 +31,7 @@ func (a *App) skill(args []string) error {
 	case "install":
 		written, err := skills.Install(a.Skill, dirs)
 		for _, file := range written {
-			fmt.Fprintf(a.Stdout, "Installed %s\n", file)
+			fmt.Fprintln(a.Stdout, a.Out.Done("Installed "+file))
 		}
 		if err != nil {
 			return client.Errorf("Could not install the skill: %v", err)
@@ -41,7 +41,7 @@ func (a *App) skill(args []string) error {
 	case "uninstall":
 		removed, err := skills.Uninstall(dirs)
 		for _, folder := range removed {
-			fmt.Fprintf(a.Stdout, "Removed %s\n", folder)
+			fmt.Fprintln(a.Stdout, a.Out.Done("Removed "+folder))
 		}
 		if err != nil {
 			return client.Errorf("Could not remove the skill: %v", err)

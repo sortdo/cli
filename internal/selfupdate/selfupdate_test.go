@@ -99,3 +99,39 @@ func TestVersionsAndMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestCopies(t *testing.T) {
+	write := func(path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := t.TempDir()
+	local := filepath.Join(root, "local", "sortdo")
+	write(local)
+	// npm links its launcher into bin; the launcher starts the program inside the same package.
+	launcher := filepath.Join(root, "lib", "node_modules", "sortdo", "npm", "sortdo.js")
+	program := filepath.Join(root, "lib", "node_modules", "sortdo", "node_modules", "@sortdo", "cli-linux-x64", "bin", "sortdo")
+	write(launcher)
+	write(program)
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(launcher, filepath.Join(bin, "sortdo")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	path := strings.Join([]string{filepath.Dir(local), filepath.Join(root, "empty"), bin, filepath.Dir(local)}, string(os.PathListSeparator))
+
+	copies := Copies(path, program)
+	if len(copies) != 2 || copies[0].Path != local || copies[0].Self || copies[1].Path != filepath.Join(bin, "sortdo") || !copies[1].Self {
+		t.Fatalf("copies: %+v", copies)
+	}
+	if copies := Copies(filepath.Dir(local), local); len(copies) != 1 || !copies[0].Self {
+		t.Fatalf("one copy: %+v", copies)
+	}
+}

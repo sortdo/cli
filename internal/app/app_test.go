@@ -12,6 +12,7 @@ import (
 	"github.com/sortdo/cli/internal/client"
 	"github.com/sortdo/cli/internal/store"
 	"github.com/sortdo/cli/internal/testserver"
+	"github.com/sortdo/cli/internal/ui"
 )
 
 type run struct {
@@ -253,5 +254,146 @@ func TestParsing(t *testing.T) {
 	draft := &client.Result{Text: `Nothing is created yet: "Notes" waits for a location (draftId 01a1824e-21fb-7e8e-8320-6aacaca55e56).`}
 	if createdPageID(draft) != "" {
 		t.Error("a draft that waits for a location has no page id")
+	}
+}
+
+// A person at a terminal gets readable results, colors and the logo; pipes and agents keep the plain text.
+func TestTerminalOutput(t *testing.T) {
+	server := setup(t)
+	signIn(t, server)
+	at := func(style ui.Style, args ...string) run {
+		var stdout, stderr bytes.Buffer
+		app := &App{Version: "1.2.3", Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr, Readable: true, Width: 100, Out: style, Err: style}
+		code := app.Run(args)
+		return run{code, stdout.String(), stderr.String()}
+	}
+	if piped := runApp("", "teams", "list"); !strings.Contains(piped.stdout, `"action":"list"`) {
+		t.Fatalf("piped output changed: %+v", piped)
+	}
+	if readable := at(ui.Style{}, "teams", "list"); readable.stdout != "Teams\n\nAction: list\n" {
+		t.Fatalf("readable output: %+v", readable)
+	}
+	if asJSON := at(ui.Style{}, "teams", "list", "--json"); !strings.Contains(asJSON.stdout, `"action": "list"`) {
+		t.Fatalf("--json at a terminal: %+v", asJSON)
+	}
+	if help := at(ui.Colored()); !strings.Contains(help.stdout, "┌─┐") || !strings.Contains(help.stdout, "\x1b[") {
+		t.Fatalf("colored help has no logo: %q", help.stdout)
+	}
+	if help := at(ui.Style{}); strings.Contains(help.stdout, "┌─┐") || strings.Contains(help.stdout, "\x1b[") {
+		t.Fatalf("plain help has colors or the logo: %q", help.stdout)
+	}
+	if failed := at(ui.Colored(), "nope"); failed.code != 1 || !strings.Contains(failed.stderr, "\x1b[31mUnknown command") {
+		t.Fatalf("colored error: %+v", failed)
+	}
+}
+
+func TestUninstall(t *testing.T) {
+	server := setup(t)
+	signIn(t, server)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := t.TempDir()
+	program := filepath.Join(dir, "sortdo")
+	if err := os.WriteFile(program, []byte("program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	saved := executablePath
+	executablePath = func() string { return program }
+	t.Cleanup(func() { executablePath = saved })
+	if result := runApp("", "skill", "install"); result.code != 0 {
+		t.Fatalf("skill install: %+v", result)
+	}
+
+	// Without a terminal, nothing is removed until --yes.
+	if result := runApp("", "uninstall"); result.code != 1 || !strings.Contains(result.stderr, "sortdo uninstall --yes") {
+		t.Fatalf("uninstall without --yes: %+v", result)
+	}
+	if _, err := os.Stat(program); err != nil {
+		t.Fatalf("the program went without --yes: %v", err)
+	}
+	// In a terminal it asks, and "no" keeps everything.
+	var stdout, stderr bytes.Buffer
+	asked := &App{Version: "1.2.3", Stdin: strings.NewReader("n\n"), Stdout: &stdout, Stderr: &stderr, Interactive: true}
+	if code := asked.Run([]string{"uninstall"}); code != 0 || !strings.Contains(stdout.String(), "[y/N]") || !strings.Contains(stdout.String(), "Nothing was removed.") {
+		t.Fatalf("uninstall answered no: %d %q %q", code, stdout.String(), stderr.String())
+	}
+	result := runApp("", "uninstall", "--yes")
+	if result.code != 0 || !strings.Contains(result.stdout, "Signed out of "+server.URL) || !strings.Contains(result.stdout, "Removed the agent skill") {
+		t.Fatalf("uninstall: %+v", result)
+	}
+	if len(server.Revoked) == 0 {
+		t.Fatal("the sign-in was not ended on the server")
+	}
+	if _, err := os.Stat(program); !os.IsNotExist(err) {
+		t.Fatalf("the program is still there: %v", err)
+	}
+	if _, err := os.Stat(store.Dir()); !os.IsNotExist(err) {
+		t.Fatalf("the settings are still there: %v", err)
+	}
+
+	// A copy that npm installed stays: npm removes it.
+	npm := filepath.Join(dir, "lib", "node_modules", "sortdo", "node_modules", "@sortdo", "cli-linux-x64", "bin", "sortdo")
+	executablePath = func() string { return npm }
+	if result := runApp("", "uninstall", "--yes"); result.code != 0 || !strings.Contains(result.stdout, "npm uninstall -g sortdo") {
+		t.Fatalf("npm uninstall: %+v", result)
+	}
+}
+
+// A person at a terminal can choose commands with the arrow keys; agents and CI never get a menu.
+func TestMenus(t *testing.T) {
+	server := setup(t)
+	signIn(t, server)
+	for _, name := range noPromptVariables {
+		t.Setenv(name, "")
+	}
+	person := func(keys string, args ...string) run {
+		var stdout, stderr bytes.Buffer
+		app := &App{Version: "1.2.3", Stdin: strings.NewReader(keys), Stdout: &stdout, Stderr: &stderr, Interactive: true, Width: 100, Height: 30}
+		code := app.Run(args)
+		return run{code, stdout.String(), stderr.String()}
+	}
+	// Type to find the command, then choose the action; the command that runs is shown.
+	if result := person("teams\rlist\r"); result.code != 0 || !strings.Contains(result.stdout, "› sortdo teams list") || !strings.Contains(result.stdout, `"action":"list"`) {
+		t.Fatalf("menu: %+v", result)
+	}
+	if result := person("search\rroad map\r"); result.code != 0 || !strings.Contains(result.stdout, "› sortdo search 'road map'") || !strings.Contains(result.stdout, "Notes") {
+		t.Fatalf("search from the menu: %+v", result)
+	}
+	// A tool command without its action asks for it.
+	if result := person("\x1b[B\r", "teams"); result.code != 0 || !strings.Contains(result.stdout, "› sortdo teams ") {
+		t.Fatalf("action menu: %+v", result)
+	}
+	// Esc leaves without running anything.
+	if result := person("\x1b"); result.code != 0 || strings.Contains(result.stdout, "› sortdo") {
+		t.Fatalf("cancel: %+v", result)
+	}
+	// In CI, under a coding agent or with SORTDO_NO_INPUT, the same commands print help or an error and never wait.
+	for _, name := range []string{"CI", "CLAUDECODE", "SORTDO_NO_INPUT"} {
+		t.Setenv(name, "1")
+		if result := person(""); !strings.Contains(result.stdout, "Usage:") {
+			t.Fatalf("%s: bare sortdo should print help: %+v", name, result)
+		}
+		if result := person("", "teams"); result.code != 1 || !strings.Contains(result.stderr, "Choose an action") {
+			t.Fatalf("%s: teams without an action should fail: %+v", name, result)
+		}
+		t.Setenv(name, "")
+	}
+}
+
+func TestUpdateAndSignInMessages(t *testing.T) {
+	setup(t)
+	// npm, Homebrew and winget copies get their command before any download is tried.
+	t.Setenv("SORTDO_RELEASES_URL", "http://127.0.0.1:9")
+	saved := executablePath
+	executablePath = func() string { return "/opt/homebrew/Caskroom/sortdo/0.1.2/sortdo" }
+	t.Cleanup(func() { executablePath = saved })
+	if result := runApp("", "update"); result.code != 1 || !strings.Contains(result.stderr, "brew upgrade sortdo") || strings.Contains(result.stderr, "Could not") {
+		t.Fatalf("update for Homebrew: %+v", result)
+	}
+	// A workspace command before sign-in says to sign in.
+	if result := runApp("", "teams", "list"); result.code != 1 || !strings.Contains(result.stderr, "Sign in to use the workspace commands, such as teams: sortdo login") {
+		t.Fatalf("not signed in: %+v", result)
 	}
 }

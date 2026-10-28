@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -52,7 +53,31 @@ func NormalizeServer(server string) (string, error) {
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil {
 		return "", Errorf("Not a server address: %s", server)
 	}
+	if parsed.Scheme == "http" && !loopback(strings.ToLower(parsed.Hostname())) {
+		return "", Errorf("Use https://%s. sortdo sends the sign-in over plain http:// only to this computer.", parsed.Host)
+	}
 	return parsed.Scheme + "://" + strings.ToLower(parsed.Host), nil
+}
+
+// loopback is a host on this computer: localhost, a loopback address, or a name that resolves only to loopback
+// addresses (a development name in the hosts file).
+func loopback(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	addresses, err := net.LookupHost(host)
+	if err != nil || len(addresses) == 0 {
+		return false
+	}
+	for _, address := range addresses {
+		if ip := net.ParseIP(address); ip == nil || !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
 }
 
 // ServerFlag is " --server <origin>" for any server but the default, so printed commands work as they are.
@@ -183,7 +208,7 @@ func tokensFrom(body map[string]any) store.Tokens {
 	}
 }
 
-// TokenSource says where AccessToken got its token: "SORTDO_TOKEN", "OS keychain" or a file path.
+// TokenSource says where AccessToken gets its token: "SORTDO_TOKEN", "OS keychain" or a file path.
 func TokenSource(origin string) string {
 	if os.Getenv("SORTDO_TOKEN") != "" {
 		return "SORTDO_TOKEN"
@@ -192,9 +217,21 @@ func TokenSource(origin string) string {
 	return source
 }
 
-// AccessToken returns SORTDO_TOKEN, or the stored token, refreshed when it expires within a minute.
+// tokenServer is the one server SORTDO_TOKEN is sent to: SORTDO_SERVER, or the default server.
+func tokenServer() string {
+	if server, err := NormalizeServer(os.Getenv("SORTDO_SERVER")); err == nil && os.Getenv("SORTDO_SERVER") != "" {
+		return server
+	}
+	return DefaultServer
+}
+
+// AccessToken returns SORTDO_TOKEN, or the stored token, refreshed when it expires within a minute. SORTDO_TOKEN goes
+// only to its own server, so a --server option cannot send it anywhere else.
 func AccessToken(origin string) (string, error) {
 	if token := os.Getenv("SORTDO_TOKEN"); token != "" {
+		if server := tokenServer(); origin != server {
+			return "", Errorf("SORTDO_TOKEN is for %s, so sortdo does not send it to %s. To use it there, set SORTDO_SERVER=%s; otherwise unset SORTDO_TOKEN.", server, origin, origin)
+		}
 		return token, nil
 	}
 	current, _ := store.LoadTokens(origin)

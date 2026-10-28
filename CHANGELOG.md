@@ -6,6 +6,20 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.2 (2026-10-28)
+
+- In a terminal, results are now tables and readable lines, not raw JSON. Pipes, scripts and coding agents get the same output as before, and `--json` still prints JSON.
+- sortdo has a new look in the terminal: the Sort logo, results in framed panels, colors, and an animation while it waits. Set `NO_COLOR=1` to turn the colors off.
+- Run `sortdo` on its own to choose a command with the arrow keys, or type to filter. A command without its action, such as `sortdo teams`, lets you choose the action. sortdo shows the full command before it runs it. Menus open only in a terminal, never for scripts or coding agents; `SORTDO_NO_INPUT=1` turns them off.
+- `sortdo uninstall` signs out and removes sortdo, its settings and the agent skill.
+- `sortdo status` and `sortdo update` now warn when more than one copy of sortdo is installed.
+- `SORTDO_TOKEN` is now sent only to its own server: the one in `SORTDO_SERVER`, or trysort.com. A `--server` option cannot send it anywhere else.
+- sortdo uses plain `http://` only for a server on this computer, such as `localhost`. Other servers need `https://`.
+- `sortdo update` gives npm, Homebrew and winget users their update command at once, without a download first.
+- A workspace command such as `sortdo teams list` now says to sign in when you are not signed in.
+- The install script no longer tries a download again without its HTTPS-only settings.
+- The npm packages are now published with npm trusted publishing, so no long-lived npm token can publish them.
+
 ## 0.1.1 (2026-10-28)
 
 - sortdo is now on npm: `npm install -g sortdo`.

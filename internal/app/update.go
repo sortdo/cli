@@ -19,7 +19,8 @@ type updateCheck struct {
 	Latest string `json:"latest"`
 }
 
-func executablePath() string {
+// executablePath is this program's file, with links resolved. Tests replace it.
+var executablePath = func() string {
 	executable, err := os.Executable()
 	if err != nil {
 		return ""
@@ -50,7 +51,7 @@ func startUpdateNotice(a *App) func() {
 	}
 	print := func() {
 		if latest := latestKnownVersion(a.Version); latest != "" {
-			fmt.Fprintf(a.Stderr, "\nsortdo %s is available (you have %s). Run: %s\n", latest, a.Version, updateCommand())
+			fmt.Fprintln(a.Stderr, "\n"+a.Err.Yellow(fmt.Sprintf("sortdo %s is available (you have %s). Run: %s", latest, a.Version, updateCommand())))
 		}
 	}
 	var check updateCheck
@@ -73,12 +74,37 @@ func startUpdateNotice(a *App) func() {
 	}
 }
 
+// update updates sortdo, or reports the latest version. Either way it warns when more than one sortdo is installed,
+// because only the one that runs changes.
 func (a *App) update(args []string) error {
+	err := a.updateProgram(args)
+	if err == nil {
+		fmt.Fprint(a.Stdout, a.copiesNote())
+	}
+	return err
+}
+
+func (a *App) updateProgram(args []string) error {
 	f, err := parseFlags(args, nil, []string{"check"}, "update")
 	if err != nil {
 		return err
 	}
-	latest, err := selfupdate.Latest(30 * time.Second)
+	// Only the install script's copy updates itself; the others need no download to say so.
+	executable := executablePath()
+	method := selfupdate.DetectMethod(executable)
+	if !f.bool("check") {
+		if method != selfupdate.Script {
+			return client.Errorf("%s installed sortdo, so update it there: %s", method, method.Command())
+		}
+		if a.Version == "dev" {
+			return client.Errorf("This is a development build. Install a release: curl -fsSL https://sort.do/install | bash")
+		}
+	}
+	var latest string
+	err = a.wait("Checking for updates…", func() (err error) {
+		latest, err = selfupdate.Latest(30 * time.Second)
+		return err
+	})
 	if err != nil {
 		return client.Errorf("Could not find the latest release: %v", err)
 	}
@@ -88,24 +114,23 @@ func (a *App) update(args []string) error {
 		return nil
 	}
 	if f.bool("check") {
-		fmt.Fprintf(a.Stdout, "sortdo %s is available (you have %s). Run: %s\n", latest, a.Version, updateCommand())
+		fmt.Fprintf(a.Stdout, "sortdo %s is available (you have %s). Run: %s\n", latest, a.Version, method.Command())
 		return nil
 	}
-	executable := executablePath()
-	if method := selfupdate.DetectMethod(executable); method != selfupdate.Script {
-		return client.Errorf("%s installed sortdo, so update it there: %s", method, method.Command())
+	if !a.Err.On() {
+		fmt.Fprintf(a.Stdout, "Downloading sortdo %s…\n", latest)
 	}
-	if a.Version == "dev" {
-		return client.Errorf("This is a development build. Install a release: curl -fsSL https://sort.do/install | bash")
-	}
-	fmt.Fprintf(a.Stdout, "Downloading sortdo %s…\n", latest)
-	program, err := selfupdate.Fetch(latest, runtime.GOOS, runtime.GOARCH)
+	var program []byte
+	err = a.wait(fmt.Sprintf("Downloading sortdo %s…", latest), func() (err error) {
+		program, err = selfupdate.Fetch(latest, runtime.GOOS, runtime.GOARCH)
+		return err
+	})
 	if err != nil {
 		return client.Errorf("Could not download sortdo %s: %v", latest, err)
 	}
 	if err := selfupdate.Replace(executable, program); err != nil {
 		return client.Errorf("Could not replace %s: %v", executable, err)
 	}
-	fmt.Fprintf(a.Stdout, "Updated sortdo %s to %s.\n", a.Version, latest)
+	fmt.Fprintln(a.Stdout, a.Out.Done(fmt.Sprintf("Updated sortdo %s to %s.", a.Version, latest)))
 	return nil
 }

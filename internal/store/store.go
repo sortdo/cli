@@ -13,6 +13,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/zalando/go-keyring"
@@ -202,6 +203,36 @@ func DeleteTokens(origin string) {
 		_ = writeJSON("config.json", cfg)
 	}
 	removeFileTokens(origin)
+}
+
+// SignedInServers lists the servers that have a stored sign-in.
+func SignedInServers() []string {
+	var servers []string
+	for origin := range loadConfig().Servers {
+		servers = append(servers, origin)
+	}
+	for origin := range loadCredentialsFile().Servers {
+		if !slices.Contains(servers, origin) {
+			servers = append(servers, origin)
+		}
+	}
+	slices.Sort(servers)
+	return servers
+}
+
+// RemoveAll deletes sortdo's files: settings, sign-ins kept in a file, waiting sign-ins and the cache. The folder
+// goes too when nothing else is in it.
+func RemoveAll() error {
+	for _, name := range []string{"config.json", "credentials.json", "pending-login.json"} {
+		if err := os.Remove(filepath.Join(Dir(), name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(Dir(), "cache")); err != nil {
+		return err
+	}
+	_ = os.Remove(Dir())
+	return nil
 }
 
 // LoadPending returns the server's waiting sign-in.
