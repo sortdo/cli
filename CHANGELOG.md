@@ -6,6 +6,10 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.1 (2026-10-28)
+
+- sortdo is now on npm: `npm install -g sortdo`.
+
 ## 0.1.0 (2026-10-28)
 
 The first release of sortdo, Sort's command line.

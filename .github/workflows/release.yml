@@ -66,5 +66,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           node npm/build.mjs dist "${GITHUB_REF_NAME#v}" npm-out
-          for folder in npm-out/cli-*; do npm publish "$folder"; done
-          npm publish npm-out/sortdo
+          # A leading ./ makes npm read a folder; "npm-out/sortdo" alone is read as a GitHub repository.
+          for folder in ./npm-out/cli-*; do npm publish "$folder"; done
+          npm publish ./npm-out/sortdo
