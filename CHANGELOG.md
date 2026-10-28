@@ -6,6 +6,11 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.3 (2026-10-28)
+
+- `sortdo update` now checks that each release is signed with sortdo's release key before it trusts any download. A release without a valid signature is refused, and nothing changes. You can check a release yourself with `minisign`; see the install docs.
+- sortdo is now built with the newest version of Go, with its latest security fixes.
+
 ## 0.1.2 (2026-10-28)
 
 - In a terminal, results are now tables and readable lines, not raw JSON. Pipes, scripts and coding agents get the same output as before, and `--json` still prints JSON.

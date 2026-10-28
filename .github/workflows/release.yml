@@ -19,12 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # The newest Go release, so every build has the latest security fixes in Go's own packages.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: stable
+          check-latest: true
       - name: Release notes from CHANGELOG.md
         run: go run ./tools/changelog notes "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
       - name: Build and publish (GitHub Releases, Homebrew, winget)
@@ -38,6 +40,9 @@ jobs:
           # The Homebrew and winget commits are authored by the person who pushed the tag.
           RELEASE_AUTHOR_NAME: ${{ vars.RELEASE_AUTHOR_NAME || github.actor }}
           RELEASE_AUTHOR_EMAIL: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+          # The minisign release key that signs checksums.txt (tools/sign). sortdo update refuses an unsigned release.
+          SORTDO_SIGNING_KEY: ${{ secrets.SORTDO_SIGNING_KEY }}
+          SORTDO_SIGNING_PASSWORD: ${{ secrets.SORTDO_SIGNING_PASSWORD }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
           # Optional until Apple enrollment: with these, the macOS programs are signed and notarized.
@@ -53,12 +58,13 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+            dist/checksums.txt.minisig
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: lts/*
           registry-url: https://registry.npmjs.org
       # npm trusted publishing (OIDC, no token) needs npm 11.5.1 or later; it adds provenance on its own.
-      - run: npm install -g npm@11
+      - run: npm install -g npm@latest
       - name: Publish to npm
         run: |
           node npm/build.mjs dist "${GITHUB_REF_NAME#v}" npm-out

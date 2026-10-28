@@ -33,10 +33,11 @@ Documentation: https://docs.trysort.com/cli
 - sortdo signs in with the OAuth device grant as Sort's own app. The sign-in page marks it as made by Sort and shows the code from your terminal.
 - Tokens are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), or in `~/.config/sortdo/credentials.json` with mode 0600 when there is none.
 - Releases are built by the workflow in this repository. Check one with `gh attestation verify <file> --repo sortdo/cli`.
+- Each release's `checksums.txt` is signed with the release key, and `sortdo update` refuses a release whose signature does not check out. Check one by hand with `minisign -Vm checksums.txt -P RWQsuyzz4q/CJYGDrRz9vMHXgekMewZ+HVM3ux70Ft+oaNjrhxfCL+KL`.
 - Report a vulnerability to security@trysort.com.
 
 ## Development
 
-Each release is published here with its full source. Build it with Go 1.24 or later: `go build .` and `go test ./...`.
+Each release is published here with its full source. Build it with Go 1.27 or later: `go build .` and `go test ./...`.
 
 MIT License.

@@ -32,6 +32,15 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# sortdo update trusts a release only when checksums.txt carries this signature, made with the minisign release key
+# (SORTDO_SIGNING_KEY). Without the key, the release stops here, before anything is published.
+signs:
+  - id: release-key
+    artifacts: checksum
+    signature: "${artifact}.minisig"
+    cmd: go
+    args: ["run", "./tools/sign", "${artifact}", "${signature}", "{{ .Version }}"]
+
 # The release notes come from CHANGELOG.md (--release-notes in the release workflow), never from commit messages.
 # Developer ID signing and notarization from Linux, once the Apple secrets exist. Until then the programs are unsigned:
 # files that curl and npm download carry no quarantine flag, and the Homebrew cask removes it, so macOS runs them.

@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aead.dev/minisign"
 )
 
 func archive(t *testing.T, program string) []byte {
@@ -29,14 +33,42 @@ func archive(t *testing.T, program string) []byte {
 	return buffer.Bytes()
 }
 
-func releaseServer(t *testing.T, body []byte, sum string) {
+// testKey stands in for the release key: the tests sign with it, and sortdo trusts it while they run.
+func testKey(t *testing.T) minisign.PrivateKey {
+	public, private, err := minisign.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := public.MarshalText()
+	saved := releaseKeys
+	releaseKeys = []string{string(text)}
+	t.Cleanup(func() { releaseKeys = saved })
+	return private
+}
+
+// sign signs as tools/sign does.
+func sign(key minisign.PrivateKey, sums []byte, version string) []byte {
+	reader := minisign.NewReader(bytes.NewReader(sums))
+	_, _ = io.Copy(io.Discard, reader)
+	return reader.SignWithComments(key, SignedComment(version), "test")
+}
+
+func checksums(sum string) []byte {
+	return []byte(fmt.Sprintf("%s  sortdo_linux_amd64.tar.gz\nabc  sortdo_darwin_arm64.tar.gz\n", sum))
+}
+
+// releaseServer serves release 1.4.0 with its checksums and, when signature is not nil, its signature.
+func releaseServer(t *testing.T, body []byte, sum string, signature []byte) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/releases/tag/v1.4.0", http.StatusFound)
 	})
 	mux.HandleFunc("/releases/download/v1.4.0/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "%s  sortdo_linux_amd64.tar.gz\nabc  sortdo_darwin_arm64.tar.gz\n", sum)
+		_, _ = w.Write(checksums(sum))
 	})
+	if signature != nil {
+		mux.HandleFunc("/releases/download/v1.4.0/checksums.txt.minisig", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(signature) })
+	}
 	mux.HandleFunc("/releases/download/v1.4.0/sortdo_linux_amd64.tar.gz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(body) })
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -44,9 +76,10 @@ func releaseServer(t *testing.T, body []byte, sum string) {
 }
 
 func TestFetchAndReplace(t *testing.T) {
+	key := testKey(t)
 	body := archive(t, "new program")
 	sum := sha256.Sum256(body)
-	releaseServer(t, body, hex.EncodeToString(sum[:]))
+	releaseServer(t, body, hex.EncodeToString(sum[:]), sign(key, checksums(hex.EncodeToString(sum[:])), "1.4.0"))
 	if latest, err := Latest(5 * time.Second); err != nil || latest != "1.4.0" {
 		t.Fatalf("Latest = %q, %v", latest, err)
 	}
@@ -68,12 +101,51 @@ func TestFetchAndReplace(t *testing.T) {
 }
 
 func TestChecksumMismatch(t *testing.T) {
-	releaseServer(t, archive(t, "tampered"), strings.Repeat("0", 64))
+	key := testKey(t)
+	releaseServer(t, archive(t, "tampered"), strings.Repeat("0", 64), sign(key, checksums(strings.Repeat("0", 64)), "1.4.0"))
 	if _, err := Fetch("1.4.0", "linux", "amd64"); err == nil || !strings.Contains(err.Error(), "does not match its checksum") {
 		t.Fatalf("a wrong checksum stops the update: %v", err)
 	}
 	if _, err := Fetch("1.4.0", "windows", "amd64"); err == nil || !strings.Contains(err.Error(), "no entry for sortdo_windows_amd64.zip") {
 		t.Fatalf("a missing checksum stops the update: %v", err)
+	}
+}
+
+// sortdo update trusts checksums.txt only with a signature from the release key, made for that version.
+func TestSignature(t *testing.T) {
+	key := testKey(t)
+	body := archive(t, "new program")
+	digest := sha256.Sum256(body)
+	sum := hex.EncodeToString(digest[:])
+	_, otherKey, _ := minisign.GenerateKey(rand.Reader)
+	for _, c := range []struct {
+		name      string
+		signature []byte
+		want      string
+	}{
+		{"unsigned", nil, "the release has no signature"},
+		{"another key", sign(otherKey, checksums(sum), "1.4.0"), "release key did not sign"},
+		{"an old release's signature", sign(key, checksums(sum), "1.3.0"), `is for "sortdo 1.3.0 checksums.txt"`},
+		{"changed checksums", sign(key, checksums(strings.Repeat("1", 64)), "1.4.0"), "release key did not sign"},
+		{"not a signature", []byte("hello"), "not a minisign signature"},
+	} {
+		releaseServer(t, body, sum, c.signature)
+		if _, err := Fetch("1.4.0", "linux", "amd64"); err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "nothing was changed") {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}
+
+// The keys built into sortdo must be real minisign public keys.
+func TestReleaseKeys(t *testing.T) {
+	if len(releaseKeys) == 0 {
+		t.Fatal("no release key")
+	}
+	for _, text := range releaseKeys {
+		var key minisign.PublicKey
+		if err := key.UnmarshalText([]byte(text)); err != nil {
+			t.Errorf("release key %q: %v", text, err)
+		}
 	}
 }
 

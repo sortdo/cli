@@ -144,6 +144,10 @@ func Copies(pathList, self string) []Copy {
 	if runtime.GOOS == "windows" {
 		name = "sortdo.exe"
 	}
+	// Both sides resolve links, as a temporary folder on macOS (/var is a link to /private/var) shows.
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
 	selfKey := copyKey(self)
 	var copies []Copy
 	seen := map[string]bool{}
@@ -258,6 +262,13 @@ func Fetch(version, goos, goarch string) ([]byte, error) {
 	sums, err := download(base + "checksums.txt")
 	if err != nil {
 		return nil, err
+	}
+	signature, err := download(base + "checksums.txt.minisig")
+	if err != nil {
+		return nil, fmt.Errorf("the release has no signature, so nothing was changed: %w", err)
+	}
+	if err := checkRelease(sums, signature, version); err != nil {
+		return nil, fmt.Errorf("%w; nothing was changed", err)
 	}
 	want, err := checksum(sums, name)
 	if err != nil {
