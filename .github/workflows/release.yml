@@ -1,4 +1,5 @@
-# Builds a pushed vX.Y.Z tag and publishes it to GitHub Releases, Homebrew, winget and npm.
+# Tests a pushed vX.Y.Z tag on Linux, macOS and Windows, publishes it to GitHub Releases, Homebrew, winget and npm,
+# then installs the published release on each system and tries it.
 name: Release
 
 on:
@@ -15,7 +16,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Nothing is built or published unless the tests pass on every system sortdo supports.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Format
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -71,3 +94,89 @@ jobs:
           # A leading ./ makes npm read a folder; "npm-out/sortdo" alone is read as a GitHub repository.
           for folder in ./npm-out/cli-*; do npm publish "$folder"; done
           npm publish ./npm-out/sortdo
+
+  # Installs the release the way people do, on each system, and tries it without signing in.
+  smoke:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      SORTDO_INSTALL_SKILL: '1'
+    steps:
+      - name: Install script, then the commands, update and uninstall
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          want="sortdo ${GITHUB_REF_NAME#v}"
+          curl -fsSL https://sort.do/install | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          test "$(sortdo --version)" = "$want"
+          sortdo help > /dev/null
+          sortdo status
+          sortdo update | grep -q "is the latest version"
+          if out=$(sortdo teams list 2>&1); then echo "teams list worked without a sign-in"; exit 1; fi
+          echo "$out" | grep -q "Sign in"
+          test -f "$HOME/.agents/skills/sortdo/SKILL.md"
+          sortdo uninstall --yes
+          test ! -e "$HOME/.local/bin/sortdo"
+          test ! -e "$HOME/.agents/skills/sortdo"
+      - name: Install script, then the commands, update and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $want = "sortdo $($env:GITHUB_REF_NAME.TrimStart('v'))"
+          irm https://sort.do/install.ps1 | iex
+          $program = Join-Path $env:LOCALAPPDATA 'Programs\sortdo\sortdo.exe'
+          $got = sortdo --version
+          if ($got -ne $want) { throw "version: $got" }
+          sortdo help | Out-Null
+          if ($LASTEXITCODE) { throw 'help failed' }
+          sortdo status
+          if ($LASTEXITCODE) { throw 'status failed' }
+          $update = sortdo update
+          if ("$update" -notmatch 'is the latest version') { throw "update: $update" }
+          $teams = sortdo teams list 2>&1
+          if ($LASTEXITCODE -eq 0 -or "$teams" -notmatch 'Sign in') { throw "teams list: $teams" }
+          if (-not (Test-Path "$HOME\.agents\skills\sortdo\SKILL.md")) { throw 'the skill was not installed' }
+          sortdo uninstall --yes
+          if ($LASTEXITCODE) { throw 'uninstall failed' }
+          # Windows cannot delete a running program: uninstall moves it aside and deletes it just after it exits.
+          Start-Sleep -Seconds 6
+          if ((Test-Path $program) -or (Test-Path "$program.old")) { throw 'the program is still there' }
+          if (Test-Path "$HOME\.agents\skills\sortdo") { throw 'the skill is still there' }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - name: npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          platform=$(node -p "'@sortdo/cli-' + process.platform + '-' + process.arch")
+          # npm takes a few minutes to make new versions available.
+          for _ in $(seq 1 30); do
+            npm view "sortdo@$version" version > /dev/null 2>&1 && npm view "$platform@$version" version > /dev/null 2>&1 && break
+            sleep 20
+          done
+          npm install -g "sortdo@$version"
+          test "$(sortdo --version)" = "sortdo $version"
+          if out=$(sortdo update 2>&1); then echo "update did not name npm"; exit 1; fi
+          echo "$out" | grep -q "npm install -g sortdo@latest"
+          sortdo uninstall --yes | grep -q "npm uninstall -g sortdo"
+          npm uninstall -g sortdo
+      - name: Homebrew
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          brew install sortdo/tap/sortdo
+          test "$(sortdo --version)" = "sortdo ${GITHUB_REF_NAME#v}"
+          if out=$(sortdo update 2>&1); then echo "update did not name Homebrew"; exit 1; fi
+          echo "$out" | grep -q "brew upgrade sortdo"
+          brew uninstall sortdo

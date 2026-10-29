@@ -6,6 +6,10 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.4 (2026-10-29)
+
+- Every release is now tested on Linux, macOS and Windows before it is published, and installed and tried on each system after.
+
 ## 0.1.3 (2026-10-28)
 
 - `sortdo update` now checks that each release is signed with sortdo's release key before it trusts any download. A release without a valid signature is refused, and nothing changes. You can check a release yourself with `minisign`; see the install docs.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -17,7 +18,7 @@ func TestFileStorage(t *testing.T) {
 	if err != nil || keychainError != nil || place != CredentialsPath() {
 		t.Fatalf("SaveTokens: %s %v %v", place, keychainError, err)
 	}
-	if info, _ := os.Stat(Dir()); info.Mode().Perm() != 0o700 {
+	if info, _ := os.Stat(Dir()); runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
 		t.Fatalf("folder mode %v", info.Mode())
 	}
 	if tokens, source := LoadTokens(origin); tokens == nil || tokens.AccessToken != "a" || source != CredentialsPath() {

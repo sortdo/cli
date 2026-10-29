@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +96,7 @@ func TestFetchAndReplace(t *testing.T) {
 	if data, _ := os.ReadFile(executable); string(data) != "new program" {
 		t.Fatalf("replaced: %q", data)
 	}
-	if info, _ := os.Stat(executable); info.Mode().Perm() != 0o755 {
+	if info, _ := os.Stat(executable); runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
 		t.Fatalf("mode %v", info.Mode())
 	}
 }
@@ -182,10 +183,27 @@ func TestCopies(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	name := "sortdo"
+	if runtime.GOOS == "windows" {
+		name = "sortdo.exe"
+	}
 	root := t.TempDir()
-	local := filepath.Join(root, "local", "sortdo")
+	local := filepath.Join(root, "local", name)
 	write(local)
-	// npm links its launcher into bin; the launcher starts the program inside the same package.
+	other := filepath.Join(root, "other", name)
+	write(other)
+	path := strings.Join([]string{filepath.Dir(local), filepath.Join(root, "empty"), filepath.Dir(other), filepath.Dir(local)}, string(os.PathListSeparator))
+	copies := Copies(path, other)
+	if len(copies) != 2 || copies[0].Path != local || copies[0].Self || copies[1].Path != other || !copies[1].Self {
+		t.Fatalf("copies: %+v", copies)
+	}
+	if copies := Copies(filepath.Dir(local), local); len(copies) != 1 || !copies[0].Self {
+		t.Fatalf("one copy: %+v", copies)
+	}
+	if runtime.GOOS == "windows" {
+		return // npm makes .cmd launchers on Windows, not links
+	}
+	// npm links its launcher into bin; the launcher starts the program inside the same package, so they are one copy.
 	launcher := filepath.Join(root, "lib", "node_modules", "sortdo", "npm", "sortdo.js")
 	program := filepath.Join(root, "lib", "node_modules", "sortdo", "node_modules", "@sortdo", "cli-linux-x64", "bin", "sortdo")
 	write(launcher)
@@ -195,15 +213,10 @@ func TestCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(launcher, filepath.Join(bin, "sortdo")); err != nil {
-		t.Skip("no symlinks here")
+		t.Fatal(err)
 	}
-	path := strings.Join([]string{filepath.Dir(local), filepath.Join(root, "empty"), bin, filepath.Dir(local)}, string(os.PathListSeparator))
-
-	copies := Copies(path, program)
-	if len(copies) != 2 || copies[0].Path != local || copies[0].Self || copies[1].Path != filepath.Join(bin, "sortdo") || !copies[1].Self {
-		t.Fatalf("copies: %+v", copies)
-	}
-	if copies := Copies(filepath.Dir(local), local); len(copies) != 1 || !copies[0].Self {
-		t.Fatalf("one copy: %+v", copies)
+	path = strings.Join([]string{filepath.Dir(local), bin}, string(os.PathListSeparator))
+	if copies := Copies(path, program); len(copies) != 2 || copies[0].Self || copies[1].Path != filepath.Join(bin, "sortdo") || !copies[1].Self {
+		t.Fatalf("npm copies: %+v", copies)
 	}
 }

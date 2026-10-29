@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -70,8 +71,9 @@ func TestAgentLoginIsTwoSteps(t *testing.T) {
 	if _, ok := store.LoadPending(server.URL); ok {
 		t.Fatal("the waiting sign-in is removed")
 	}
+	// Windows has no Unix modes; the file sits in the user's own profile folder there.
 	info, err := os.Stat(store.CredentialsPath())
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("credentials are readable only by the user: %v %v", info, err)
 	}
 	if again := runApp("", "login", "poll"); again.code != 1 || !strings.Contains(again.stderr, "No sign-in is waiting") {
