@@ -42,11 +42,11 @@ signs:
     args: ["run", "./tools/sign", "${artifact}", "${signature}", "{{ .Version }}"]
 
 # The release notes come from CHANGELOG.md (--release-notes in the release workflow), never from commit messages.
-# Developer ID signing and notarization from Linux, once the Apple secrets exist. Until then the programs are unsigned:
-# files that curl and npm download carry no quarantine flag, and the Homebrew cask removes it, so macOS runs them.
+# The macOS programs are signed with Sort's Developer ID and notarized by Apple, from Linux, before anything is
+# published. The release workflow stops first when a MACOS_* secret is missing.
 notarize:
   macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+    - enabled: true
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
@@ -55,6 +55,8 @@ notarize:
         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         wait: true
+        # The most GoReleaser allows. Apple usually answers in minutes; after a timeout the release goes on.
+        timeout: 20m
 
 release:
   github:
@@ -87,13 +89,6 @@ homebrew_casks:
     commit_author:
       name: "{{ .Env.RELEASE_AUTHOR_NAME }}"
       email: "{{ .Env.RELEASE_AUTHOR_EMAIL }}"
-    hooks:
-      post:
-        # Until the programs are notarized, remove the quarantine flag Homebrew sets, as GoReleaser shows.
-        install_steps: |
-          on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/sortdo"]
-          end
 
 winget:
   - name: sortdo

@@ -52,6 +52,18 @@ jobs:
           check-latest: true
       - name: Release notes from CHANGELOG.md
         run: go run ./tools/changelog notes "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
+      # GoReleaser signs but silently skips notarization when a notary secret is empty, so check all five first.
+      - name: Check the Apple signing secrets
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+        run: |
+          for name in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_ISSUER_ID MACOS_NOTARY_KEY_ID MACOS_NOTARY_KEY; do
+            if [ -z "${!name}" ]; then echo "::error::The secret $name is missing from the release environment"; exit 1; fi
+          done
       - name: Build and publish (GitHub Releases, Homebrew, winget)
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
@@ -68,7 +80,7 @@ jobs:
           SORTDO_SIGNING_PASSWORD: ${{ secrets.SORTDO_SIGNING_PASSWORD }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-          # Optional until Apple enrollment: with these, the macOS programs are signed and notarized.
+          # Sort's Developer ID certificate and App Store Connect key (base64), to sign and notarize the macOS programs.
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -120,6 +132,10 @@ jobs:
           sortdo help > /dev/null
           sortdo status
           sortdo update | grep -q "is the latest version"
+          if [ "$RUNNER_OS" = macOS ]; then
+            codesign --verify --strict "$HOME/.local/bin/sortdo"
+            codesign -dv "$HOME/.local/bin/sortdo" 2>&1 | grep -qx "Authority=Developer ID Application: Sort Works Ltd (KDLWZ98LA3)"
+          fi
           if out=$(sortdo teams list 2>&1); then echo "teams list worked without a sign-in"; exit 1; fi
           echo "$out" | grep -q "Sign in"
           test -f "$HOME/.agents/skills/sortdo/SKILL.md"

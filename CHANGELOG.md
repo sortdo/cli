@@ -6,6 +6,10 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.5 (2026-10-30)
+
+- On macOS, sortdo is now signed by Sort Works Ltd and notarized by Apple, so macOS runs it without a warning however you install it.
+
 ## 0.1.4 (2026-10-29)
 
 - Every release is now tested on Linux, macOS and Windows before it is published, and installed and tried on each system after.
