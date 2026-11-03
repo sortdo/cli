@@ -6,6 +6,10 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.7 (2026-11-03)
+
+- The checks that install each release and try it on Linux, macOS and Windows no longer fail by mistake when a command prints more after the text they look for.
+
 ## 0.1.6 (2026-11-03)
 
 - `sortdo login --as-agent "<name>"` signs in as a new agent member with its own name. A workspace owner or admin allows it in the browser and becomes the agent's manager; anyone else signs in as themselves. `sortdo status` and the sign-in message name the agent.

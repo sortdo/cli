@@ -123,6 +123,8 @@ jobs:
       - name: Install script, then the commands, update and uninstall
         if: runner.os != 'Windows'
         shell: bash
+        # A check reads a command's saved output (grep <<<"$out"). Piped into grep -q, a command that writes after
+        # the match gets SIGPIPE, and pipefail fails the step although the check passed.
         run: |
           set -euo pipefail
           want="sortdo ${GITHUB_REF_NAME#v}"
@@ -131,13 +133,15 @@ jobs:
           test "$(sortdo --version)" = "$want"
           sortdo help > /dev/null
           sortdo status
-          sortdo update | grep -q "is the latest version"
+          out=$(sortdo update)
+          grep -q "is the latest version" <<<"$out"
           if [ "$RUNNER_OS" = macOS ]; then
             codesign --verify --strict "$HOME/.local/bin/sortdo"
-            codesign -dvv "$HOME/.local/bin/sortdo" 2>&1 | grep -qx "Authority=Developer ID Application: Sort Works Ltd (KDLWZ98LA3)"
+            out=$(codesign -dvv "$HOME/.local/bin/sortdo" 2>&1)
+            grep -qx "Authority=Developer ID Application: Sort Works Ltd (KDLWZ98LA3)" <<<"$out"
           fi
           if out=$(sortdo teams list 2>&1); then echo "teams list worked without a sign-in"; exit 1; fi
-          echo "$out" | grep -q "Sign in"
+          grep -q "Sign in" <<<"$out"
           test -f "$HOME/.agents/skills/sortdo/SKILL.md"
           sortdo uninstall --yes
           test ! -e "$HOME/.local/bin/sortdo"
@@ -184,8 +188,9 @@ jobs:
           npm install -g "sortdo@$version"
           test "$(sortdo --version)" = "sortdo $version"
           if out=$(sortdo update 2>&1); then echo "update did not name npm"; exit 1; fi
-          echo "$out" | grep -q "npm install -g sortdo@latest"
-          sortdo uninstall --yes | grep -q "npm uninstall -g sortdo"
+          grep -q "npm install -g sortdo@latest" <<<"$out"
+          out=$(sortdo uninstall --yes)
+          grep -q "npm uninstall -g sortdo" <<<"$out"
           npm uninstall -g sortdo
       - name: Homebrew
         if: runner.os == 'macOS'
@@ -194,5 +199,5 @@ jobs:
           brew install sortdo/tap/sortdo
           test "$(sortdo --version)" = "sortdo ${GITHUB_REF_NAME#v}"
           if out=$(sortdo update 2>&1); then echo "update did not name Homebrew"; exit 1; fi
-          echo "$out" | grep -q "brew upgrade sortdo"
+          grep -q "brew upgrade sortdo" <<<"$out"
           brew uninstall sortdo
