@@ -142,10 +142,12 @@ func reason(body map[string]any, status int) string {
 	return fmt.Sprintf("HTTP %d", status)
 }
 
-// Hints are what the person said about themselves, so the sign-in page can fill them in.
+// Hints are what the person said about themselves, so the sign-in page can fill them in. AgentName asks to sign in as
+// a new agent member with that name; the person who allows it chooses whether to add it.
 type Hints struct {
 	Email         string
 	WorkspaceName string
+	AgentName     string
 }
 
 // StartDevice asks the server for a device code and the link the person opens.
@@ -156,6 +158,9 @@ func StartDevice(origin string, hints Hints) (*store.Pending, error) {
 	}
 	if hints.WorkspaceName != "" {
 		values.Set("workspace_name", hints.WorkspaceName)
+	}
+	if hints.AgentName != "" {
+		values.Set("agent_name", hints.AgentName)
 	}
 	status, body, err := postForm(origin+"/oauth/device_authorization", values)
 	if err != nil {

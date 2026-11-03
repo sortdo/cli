@@ -134,7 +134,7 @@ jobs:
           sortdo update | grep -q "is the latest version"
           if [ "$RUNNER_OS" = macOS ]; then
             codesign --verify --strict "$HOME/.local/bin/sortdo"
-            codesign -dv "$HOME/.local/bin/sortdo" 2>&1 | grep -qx "Authority=Developer ID Application: Sort Works Ltd (KDLWZ98LA3)"
+            codesign -dvv "$HOME/.local/bin/sortdo" 2>&1 | grep -qx "Authority=Developer ID Application: Sort Works Ltd (KDLWZ98LA3)"
           fi
           if out=$(sortdo teams list 2>&1); then echo "teams list worked without a sign-in"; exit 1; fi
           echo "$out" | grep -q "Sign in"

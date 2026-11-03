@@ -51,6 +51,26 @@ func signIn(t *testing.T, server *testserver.Server) {
 	}
 }
 
+func TestLoginAsANewAgent(t *testing.T) {
+	server := setup(t)
+	started := runApp("", "login", "--as-agent", "Research agent")
+	if started.code != 0 {
+		t.Fatalf("login --as-agent: %+v", started)
+	}
+	if got := server.DeviceRequests[0]; got["agent_name"] != "Research agent" {
+		t.Fatalf("the device request asks for the agent: %v", got)
+	}
+	// The person who allowed it chose the agent, so sortdo says it acts as the agent.
+	server.Agent = "Research agent"
+	server.Approved = true
+	if polled := runApp("", "login", "poll"); polled.code != 0 || !strings.Contains(polled.stdout, "as the agent Research agent.") {
+		t.Fatalf("poll: %+v", polled)
+	}
+	if status := runApp("", "status"); !strings.Contains(status.stdout, "Agent") || !strings.Contains(status.stdout, "Research agent") {
+		t.Fatalf("status names the agent: %s", status.stdout)
+	}
+}
+
 func TestAgentLoginIsTwoSteps(t *testing.T) {
 	server := setup(t)
 	started := runApp("", "login", "--email", "ada@example.test", "--workspace-name", "Alpha")
@@ -172,8 +192,13 @@ func TestBuiltins(t *testing.T) {
 		t.Fatalf("create_page arguments: %v", call)
 	}
 	runApp("", "pages", "edit", "p1", "--replace", "old", "--with", "new")
-	if name, arguments = server.LastCall(); name != "update_page" || arguments["replace"].(map[string]any)["newText"] != "new" {
+	if name, arguments = server.LastCall(); name != "update_page" || arguments["replace"].(map[string]any)["newText"] != "new" || arguments["pageId"] != "p1" {
 		t.Fatalf("pages edit: %s %v", name, arguments)
+	}
+	// A page URL, with the title words or without them, edits the page it names.
+	runApp("", "pages", "edit", "https://trysort.com/acme/welcome-to-sort-01a0fd7a22f47de0b1bbffc5d31f9531#comment-1", "--title", "Welcome")
+	if name, arguments = server.LastCall(); name != "update_page" || arguments["pageId"] != "01a0fd7a-22f4-7de0-b1bb-ffc5d31f9531" || arguments["title"] != "Welcome" {
+		t.Fatalf("pages edit with a URL: %s %v", name, arguments)
 	}
 	if result := runApp("", "pages", "create", "--draft", "d1"); result.code != 1 || !strings.Contains(result.stderr, "Say where the draft goes") {
 		t.Fatalf("a draft needs a place: %+v", result)
@@ -397,5 +422,26 @@ func TestUpdateAndSignInMessages(t *testing.T) {
 	// A workspace command before sign-in says to sign in.
 	if result := runApp("", "teams", "list"); result.code != 1 || !strings.Contains(result.stderr, "Sign in to use the workspace commands, such as teams: sortdo login") {
 		t.Fatalf("not signed in: %+v", result)
+	}
+}
+
+func TestPageIDFromReference(t *testing.T) {
+	id := "01a0fd7a-22f4-7de0-b1bb-ffc5d31f9531"
+	for _, reference := range []string{
+		id,
+		"01a0fd7a22f47de0b1bbffc5d31f9531",
+		"https://trysort.com/primary-inc/01a0fd7a22f47de0b1bbffc5d31f9531",
+		"https://trysort.com/primary-inc/welcome-to-sort-01a0fd7a22f47de0b1bbffc5d31f9531",
+		"https://trysort.com/primary-inc/welcome-01A0FD7A22F47DE0B1BBFFC5D31F9531/?c=1",
+		" https://trysort.com/primary-inc/cafe-01a0fd7a22f47de0b1bbffc5d31f9531#comment-2 ",
+	} {
+		if got := pageIDFromReference(reference); got != id {
+			t.Errorf("pageIDFromReference(%q) = %q, want %q", reference, got, id)
+		}
+	}
+	for _, reference := range []string{"p1", "https://trysort.com/primary-inc/settings", ""} {
+		if got := pageIDFromReference(reference); got != strings.TrimSpace(reference) {
+			t.Errorf("pageIDFromReference(%q) = %q, want it unchanged", reference, got)
+		}
 	}
 }

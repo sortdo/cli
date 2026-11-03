@@ -26,7 +26,7 @@ var builtins map[string]builtin
 
 func init() {
 	builtins = map[string]builtin{
-		"login": {"login [--email <address>] [--workspace-name <name>] [--no-browser] [--no-wait | --wait]\n  sortdo login poll",
+		"login": {"login [--email <address>] [--workspace-name <name>] [--as-agent <name>] [--no-browser] [--no-wait | --wait]\n  sortdo login poll",
 			"Sign in. In a terminal it opens the browser and waits; an agent gets a link and `sortdo login poll`.",
 			`Signs in with a code the person allows in the browser. The page shows the same code: allow only if it matches.
 
@@ -35,6 +35,8 @@ saves the sign-in and exits; ` + "`sortdo login poll`" + ` then waits for the pe
 
   --email <address>          The person's email, filled in on the sign-in page.
   --workspace-name <name>    A name for a new workspace, when the person has none yet.
+  --as-agent <name>          Sign in as a new agent member with this name, which acts in its own name. A workspace
+                             owner or admin allows it and becomes its manager; anyone else signs in as themselves.
   --no-browser               Do not open the browser.
   --no-wait                  Print the link and exit, also in a terminal.
   --wait                     Wait for the person, also without a terminal.`,
@@ -89,17 +91,21 @@ installed sortdo, it prints that tool's command to remove the program. It asks f
 	}
 }
 
-func (a *App) workspaceName() string {
+// signedInAs is the workspace and, when the sign-in acts as an agent member, the agent's name. Empty when unknown.
+func (a *App) signedInAs() (workspaceName, agentName string) {
 	result, err := a.callTool("manage_workspace", map[string]any{"action": "get"})
 	if err != nil || result.IsError {
-		return ""
+		return "", ""
 	}
 	workspace, _ := result.Data()["workspace"].(map[string]any)
-	return client.Text(workspace, "name")
+	if you, _ := result.Data()["you"].(map[string]any); client.Text(you, "kind") == "agent" {
+		agentName = client.Text(you, "name")
+	}
+	return client.Text(workspace, "name"), agentName
 }
 
 func (a *App) login(args []string) error {
-	f, err := parseFlags(args, []string{"email", "workspace-name"}, []string{"no-browser", "no-wait", "wait"}, "login")
+	f, err := parseFlags(args, []string{"email", "workspace-name", "as-agent"}, []string{"no-browser", "no-wait", "wait"}, "login")
 	if err != nil {
 		return err
 	}
@@ -116,7 +122,7 @@ func (a *App) login(args []string) error {
 	if f.bool("wait") {
 		wait = true
 	}
-	pending, err := client.StartDevice(a.origin, client.Hints{Email: f.get("email"), WorkspaceName: f.get("workspace-name")})
+	pending, err := client.StartDevice(a.origin, client.Hints{Email: f.get("email"), WorkspaceName: f.get("workspace-name"), AgentName: f.get("as-agent")})
 	if err != nil {
 		return err
 	}
@@ -182,8 +188,12 @@ func (a *App) finishLogin(pending *store.Pending) error {
 		fmt.Fprintf(a.Stderr, "No OS keychain is available (%v). The sign-in is in %s, readable only by you.\n", keychainError, place)
 	}
 	signedIn := fmt.Sprintf("Signed in to %s.", a.origin)
-	if name := a.workspaceName(); name != "" {
-		signedIn = fmt.Sprintf("Signed in to %s on %s.", name, a.origin)
+	workspace, agent := a.signedInAs()
+	if workspace != "" {
+		signedIn = fmt.Sprintf("Signed in to %s on %s.", workspace, a.origin)
+	}
+	if agent != "" {
+		signedIn = strings.TrimSuffix(signedIn, ".") + fmt.Sprintf(" as the agent %s.", agent)
 	}
 	if a.Out.On() {
 		fmt.Fprint(a.Stdout, "\n"+a.Out.Logo(signedIn, "Try: sortdo search <words>, or sortdo help")+"\n")
@@ -215,8 +225,12 @@ func (a *App) status(args []string) error {
 		if _, err := client.AccessToken(a.origin); err == nil {
 			report["signedIn"] = true
 			report["tokenFrom"] = source
-			if name := a.workspaceName(); name != "" {
-				report["workspace"] = name
+			workspace, agent := a.signedInAs()
+			if workspace != "" {
+				report["workspace"] = workspace
+			}
+			if agent != "" {
+				report["agent"] = agent
 			}
 		} else {
 			report["problem"] = err.Error()
@@ -243,6 +257,9 @@ func (a *App) status(args []string) error {
 	if report["signedIn"] == true {
 		if name, ok := report["workspace"]; ok {
 			rows = append(rows, [2]string{"Workspace", out.Bold(fmt.Sprint(name))})
+		}
+		if name, ok := report["agent"]; ok {
+			rows = append(rows, [2]string{"Agent", fmt.Sprint(name)})
 		}
 		rows = append(rows, [2]string{"Signed in", fmt.Sprintf("%s (token from %s)", out.Green("yes"), report["tokenFrom"])})
 	} else if problem, ok := report["problem"]; ok {
@@ -392,6 +409,22 @@ func (a *App) read(args []string) error {
 	return a.printResult(result)
 }
 
+var pageIDPattern = regexp.MustCompile(`(?i)[0-9a-f]{32}$`)
+
+// pageIDFromReference is the page ID in a page URL, such as https://trysort.com/acme/welcome-to-sort-<id> or
+// https://trysort.com/acme/<id>, or in a page ID without dashes. Anything else is returned as it is, for the server to check.
+func pageIDFromReference(reference string) string {
+	reference = strings.TrimSpace(reference)
+	path := strings.TrimRight(strings.SplitN(strings.SplitN(reference, "#", 2)[0], "?", 2)[0], "/")
+	last := path[strings.LastIndex(path, "/")+1:]
+	hex := pageIDPattern.FindString(strings.ReplaceAll(last, "-", ""))
+	if hex == "" {
+		return reference
+	}
+	hex = strings.ToLower(hex)
+	return hex[:8] + "-" + hex[8:12] + "-" + hex[12:16] + "-" + hex[16:20] + "-" + hex[20:]
+}
+
 var createdPagePattern = regexp.MustCompile(`^Created page .* with id: ([0-9a-f-]{36})`)
 
 // createdPageID is the id of a page that create_page created. A draft that still waits for a location has none.
@@ -490,7 +523,7 @@ func (a *App) pageEdit(args []string) error {
 	if len(f.words) != 1 {
 		return client.Errorf("Name one page: sortdo pages edit <page id or URL> --replace <old text> --with <new text>")
 	}
-	arguments := map[string]any{"pageId": f.words[0]}
+	arguments := map[string]any{"pageId": pageIDFromReference(f.words[0])}
 	if f.has("replace") || f.has("with") {
 		if !f.has("replace") || !f.has("with") {
 			return client.Errorf("Give both: --replace <old text> --with <new text>")

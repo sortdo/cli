@@ -19,6 +19,8 @@ sortdo login poll    # waits until the person allows it
 
 Give the person the link and run `sortdo login poll` at once, without asking. If poll stops before they answer, run it again. The person has no workspace yet? Add `--email <their email> --workspace-name "<name>"` to `sortdo login`: the same link lets them create one.
 
+You run on your own, not for one person? Add `--as-agent "<your name>"` to `sortdo login`. A workspace owner or admin who allows it adds you as an agent member: your edits and comments carry your name, and the actions that need approval go to them as your manager. `sortdo status` shows which agent you are; without an Agent line, the person allowed you as themselves.
+
 ## Find and read
 
 ```sh

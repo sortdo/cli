@@ -25,6 +25,8 @@ type Server struct {
 	Refreshes        int
 	// Stream answers MCP requests as an event stream instead of JSON.
 	Stream bool
+	// Agent is the agent member the sign-in acts as; empty for a person.
+	Agent  string
 	tokens int
 }
 
@@ -151,7 +153,12 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 		arguments, _ := json.Marshal(request.Params["arguments"])
 		switch name {
 		case "manage_workspace":
-			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": `{"workspace":{"name":"Alpha"}}`}}}
+			you := map[string]any{"name": "Ada", "kind": "person"}
+			if s.Agent != "" {
+				you = map[string]any{"name": s.Agent, "kind": "agent"}
+			}
+			text, _ := json.Marshal(map[string]any{"workspace": map[string]any{"name": "Alpha"}, "you": you})
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": string(text)}}}
 		case "search":
 			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "found"}}, "structuredContent": map[string]any{"results": []any{map[string]any{"title": "Notes", "url": "https://trysort.com/alpha/1"}}}}
 		case "create_page":

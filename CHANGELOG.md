@@ -6,6 +6,12 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.1.6 (2026-11-03)
+
+- `sortdo login --as-agent "<name>"` signs in as a new agent member with its own name. A workspace owner or admin allows it in the browser and becomes the agent's manager; anyone else signs in as themselves. `sortdo status` and the sign-in message name the agent.
+- `sortdo pages edit` now also takes a page URL, as its help says, for example `https://trysort.com/acme/welcome-to-sort-01a0fd7a…`.
+- The README and the install docs now give the right command to see the macOS signature: `codesign -dvv "$(command -v sortdo)"`.
+
 ## 0.1.5 (2026-10-30)
 
 - On macOS, sortdo is now signed by Sort Works Ltd and notarized by Apple, so macOS runs it without a warning however you install it.

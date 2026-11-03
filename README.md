@@ -26,13 +26,15 @@ sortdo skill install         # teach Claude Code, Codex, Cursor and other agents
 
 A coding agent runs `sortdo login` without a terminal: it gets a link to give you and `sortdo login poll` to wait for your answer. Actions that cannot be undone or that reach other people wait for your approval in Sort.
 
+An agent that works on its own signs in as its own member with `sortdo login --as-agent "Research agent"`. A workspace owner or admin allows it and manages the agent.
+
 Documentation: https://docs.trysort.com/cli
 
 ## Security
 
 - sortdo signs in with the OAuth device grant as Sort's own app. The sign-in page marks it as made by Sort and shows the code from your terminal.
 - Tokens are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), or in `~/.config/sortdo/credentials.json` with mode 0600 when there is none.
-- On macOS, the program is signed with Sort's Developer ID (Sort Works Ltd, `KDLWZ98LA3`) and notarized by Apple. Check it with `codesign -dv "$(command -v sortdo)"`.
+- On macOS, the program is signed with Sort's Developer ID (Sort Works Ltd, `KDLWZ98LA3`) and notarized by Apple. Check it with `codesign -dvv "$(command -v sortdo)"`.
 - Releases are built by the workflow in this repository. Check one with `gh attestation verify <file> --repo sortdo/cli`.
 - Each release's `checksums.txt` is signed with the release key, and `sortdo update` refuses a release whose signature does not check out. Check one by hand with `minisign -Vm checksums.txt -P RWQsuyzz4q/CJYGDrRz9vMHXgekMewZ+HVM3ux70Ft+oaNjrhxfCL+KL`.
 - Report a vulnerability to security@trysort.com.
