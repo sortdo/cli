@@ -6,6 +6,21 @@ What changed in each sortdo release, newest first.
 
 ## Unreleased
 
+## 0.2.0 (2026-11-18)
+
+Changes to the commands that sortdo builds from Sort's tools, such as `sortdo pages subpages` and `--cursor`, reach every installed sortdo within a day of a Sort update, before this release.
+
+- `sortdo inbox` is now `sortdo notifications`, with the same actions (`list`, `mark-read`, `archive`, `list-approvals` and the others). Credentials limited to the `inbox` area now use `notifications:read` and `notifications:write`; Sort changed existing ones for you.
+- `sortdo pages subpages --page-id <id>` lists the sub-pages directly under a page.
+- `sortdo messages read-thread --message-id <id>` reads a thread; `sortdo messages read` reads a conversation's timeline and needs `--conversation-id`. New: `sortdo messages get`, `open-direct`, `mark-thread-read`, `mute-thread`, `unmute-thread` and `page-threads`. `sortdo messages save` takes `--remind-at`.
+- `sortdo channels create-webhook` and `renew-webhook` wait for your approval in Sort, and the webhook's address shows there once, only to you.
+- The page lists (`sortdo pages versions`, `trash`, `recent` and `shared-with-me`) show more with `--cursor`, the `nextCursor` of the result before, instead of `--offset`. `sortdo pages add-attachment` takes up to 100 files.
+- `sortdo do-search --type pages` no longer needs `--query`: without it, it lists the most recently edited pages that match the other options. With `--json`, its results have the same fields as in the HTTP API.
+- A server error while sortdo renews your sign-in no longer signs you out. Run the command again in a minute.
+- `sortdo login poll` keeps the waiting sign-in when Sort cannot be reached, so you can run it again.
+- Command help titles use a colon, and empty values show as `-`, so they display the same in every terminal.
+- With `--json`, `sortdo view-content`, `sortdo create-page`, `sortdo update-page`, `sortdo pages create` and `sortdo pages edit` print the whole result as JSON fields, such as the new page's `pageId` or the saved edit's `applied.rev`, instead of a sentence.
+
 ## 0.1.7 (2026-11-03)
 
 - The checks that install each release and try it on Linux, macOS and Windows no longer fail by mistake when a command prints more after the text they look for.

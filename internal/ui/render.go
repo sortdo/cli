@@ -373,7 +373,7 @@ func flags(o object) string {
 func scalar(s Style, value any) string {
 	switch v := value.(type) {
 	case nil:
-		return s.Dim("—")
+		return s.Dim("-")
 	case bool:
 		if v {
 			return s.Status("yes")

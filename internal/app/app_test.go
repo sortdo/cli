@@ -101,6 +101,19 @@ func TestAgentLoginIsTwoSteps(t *testing.T) {
 	}
 }
 
+func TestPollKeepsTheCodeWhenTheServerFails(t *testing.T) {
+	server := setup(t)
+	runApp("", "login")
+	server.Down = true
+	if result := runApp("", "login", "poll"); result.code != 1 {
+		t.Fatalf("a server error stops the poll: %+v", result)
+	}
+	server.Down, server.Approved = false, true
+	if result := runApp("", "login", "poll"); result.code != 0 || !strings.Contains(result.stdout, "Signed in") {
+		t.Fatalf("the next poll finishes the sign-in: %+v", result)
+	}
+}
+
 func TestDeniedLogin(t *testing.T) {
 	server := setup(t)
 	server.Denied = true
@@ -229,6 +242,16 @@ func TestRefreshAndToken(t *testing.T) {
 	}
 	if result := runApp("", "token"); result.stdout != "access-2\n" || server.Refreshes != 1 {
 		t.Fatalf("an expired token is refreshed: %+v", result)
+	}
+	// A server error keeps the sign-in for the next try.
+	tokens, _ = store.LoadTokens(server.URL)
+	tokens.ExpiresAt, tokens.RefreshToken = time.Now().Add(-time.Minute), "busy"
+	_, _, _ = store.SaveTokens(server.URL, *tokens)
+	if result := runApp("", "token"); result.code != 1 || !strings.Contains(result.stderr, "Try again in a minute") {
+		t.Fatalf("refresh during a server error: %+v", result)
+	}
+	if current, _ := store.LoadTokens(server.URL); current == nil {
+		t.Fatal("a server error keeps the sign-in")
 	}
 	// A refresh the server refuses ends the sign-in.
 	tokens, _ = store.LoadTokens(server.URL)

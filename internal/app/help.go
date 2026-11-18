@@ -43,7 +43,7 @@ func (a *App) rootHelp() string {
 	if style.On() {
 		fmt.Fprintf(&out, "\n%s\n%s sortdo <command> [options]\n", style.Logo(a.Version, "Sort from the command line"), style.Bold("Usage:"))
 	} else {
-		fmt.Fprintln(&out, "sortdo — Sort from the command line\n\nUsage: sortdo <command> [options]")
+		fmt.Fprintln(&out, "sortdo: Sort from the command line\n\nUsage: sortdo <command> [options]")
 	}
 	for _, group := range helpGroups {
 		fmt.Fprintf(&out, "\n%s\n", style.Bold(group.title+":"))
@@ -65,7 +65,7 @@ func (a *App) rootHelp() string {
 		fmt.Fprintln(&out, style.Accent(wrap(strings.Join(names, "  "), 2)))
 		fmt.Fprintln(&out, "  sortdo <command> --help shows the actions and options.")
 	} else {
-		fmt.Fprintln(&out, "  teams, members, comments, inbox, email, schedules and more. Run sortdo tools to list them.")
+		fmt.Fprintln(&out, "  teams, members, comments, notifications, email, schedules and more. Run sortdo tools to list them.")
 	}
 	fmt.Fprintf(&out, `
 %s --server <origin> (default %s, or SORTDO_SERVER), --json, --help, --version

@@ -71,7 +71,7 @@ func (s Style) Status(text string) string {
 		return s.Yellow(text)
 	case "denied", "expired", "failed", "error", "rejected", "disabled", "cancelled", "canceled", "revoked":
 		return s.Red(text)
-	case "no", "none", "—":
+	case "no", "none", "-":
 		return s.Dim(text)
 	}
 	return text

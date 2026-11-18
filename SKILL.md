@@ -1,6 +1,6 @@
 ---
 name: sortdo
-description: Use Sort, the team knowledge workspace, from the shell with the sortdo CLI. Search and read the team's pages, create and edit pages, and manage comments, teams, members, inbox, email, schedules and connected sources. Use it whenever a task needs the team's documented knowledge, should leave a page behind, or asks for anything in Sort.
+description: Use Sort, the team knowledge workspace, from the shell with the sortdo CLI. Search and read the team's pages, create and edit pages, and manage comments, teams, members, notifications, email, schedules and connected sources. Use it whenever a task needs the team's documented knowledge, should leave a page behind, or asks for anything in Sort.
 ---
 
 # Sort from the shell
@@ -51,7 +51,7 @@ sortdo tools                            # every command with a summary
 sortdo teams --help                     # actions and options
 sortdo members list --query anna
 sortdo comments add --page-id <id> --text "Looks good"
-sortdo inbox list --json
+sortdo notifications list --json
 ```
 
 Options take one value each; repeat an array option for more values, or give a JSON array. `--args '<json>'` (or `--args -` for stdin) gives all arguments at once. A long text option also takes `--<option>-file <path>`. `--json` prints the data for scripts. `sortdo call <tool> '<json>'` calls a tool by its MCP name.

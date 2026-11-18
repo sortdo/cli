@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -178,8 +179,11 @@ func (a *App) finishLogin(pending *store.Pending) error {
 		place, keychainError, err = client.PollDevice(a.origin, pending)
 		return err
 	})
-	// The code is used up whatever the answer was; a stopped poll keeps it for the next try.
-	_ = store.SavePending(a.origin, nil)
+	// The code is used up once the server answered; a poll that got no answer keeps it for the next try.
+	var noAnswer *client.Error
+	if !errors.As(err, &noAnswer) || !noAnswer.Retry {
+		_ = store.SavePending(a.origin, nil)
+	}
 	if err != nil {
 		return err
 	}

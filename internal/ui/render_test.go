@@ -74,7 +74,7 @@ func TestRenderOther(t *testing.T) {
 		t.Error("JSON with trailing text was rendered")
 	}
 	out, _ := (Style{}).Render(`{"title":"Plans","content":"# Plans\nLine two","tags":["a","b"],"owner":null,"empty":[]}`, 80, "")
-	for _, want := range []string{"Title: Plans", "Tags:  a, b", "Owner: —", "Empty: None", "Content\n  # Plans\n  Line two"} {
+	for _, want := range []string{"Title: Plans", "Tags:  a, b", "Owner: -", "Empty: None", "Content\n  # Plans\n  Line two"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}

@@ -16,13 +16,13 @@ import (
 type Server struct {
 	*httptest.Server
 	mu sync.Mutex
-	// Approved makes the next device poll succeed; Denied makes it fail.
-	Approved, Denied bool
-	Polls            int
-	DeviceRequests   []map[string]string
-	Calls            []map[string]any // tools/call params
-	Revoked          []string
-	Refreshes        int
+	// Approved makes the next device poll succeed; Denied makes it fail; Down answers it with a server error.
+	Approved, Denied, Down bool
+	Polls                  int
+	DeviceRequests         []map[string]string
+	Calls                  []map[string]any // tools/call params
+	Revoked                []string
+	Refreshes              int
 	// Stream answers MCP requests as an event stream instead of JSON.
 	Stream bool
 	// Agent is the agent member the sign-in acts as; empty for a person.
@@ -110,6 +110,8 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case s.Polls == 1:
 			writeJSON(w, 400, map[string]any{"error": "slow_down"})
+		case s.Down:
+			writeJSON(w, 502, map[string]any{})
 		case s.Denied:
 			writeJSON(w, 400, map[string]any{"error": "access_denied"})
 		case !s.Approved:
@@ -121,6 +123,8 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		s.Refreshes++
 		if strings.HasPrefix(r.Form.Get("refresh_token"), "refresh-") {
 			writeJSON(w, 200, s.newTokens())
+		} else if r.Form.Get("refresh_token") == "busy" {
+			writeJSON(w, 503, map[string]any{"error": "temporarily_unavailable"})
 		} else {
 			writeJSON(w, 400, map[string]any{"error": "invalid_grant"})
 		}

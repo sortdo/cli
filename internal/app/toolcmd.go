@@ -383,7 +383,7 @@ func (command *toolCommand) help(action string, style ui.Style) string {
 	if title == "" {
 		title = command.tool.Name
 	}
-	fmt.Fprintf(&out, "%s — %s\n\n", style.Bold("sortdo "+command.name), title)
+	fmt.Fprintf(&out, "%s: %s\n\n", style.Bold("sortdo "+command.name), title)
 	fmt.Fprintln(&out, wrap(command.tool.Description, 0))
 	fmt.Fprintln(&out)
 	switch {

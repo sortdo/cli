@@ -27,13 +27,17 @@ const (
 	protocolVersion = "2025-11-25"
 )
 
-// Error is a message for the person, printed as it is.
-type Error struct{ Message string }
+// Error is a message for the person, printed as it is. Retry marks an error where the server gave no answer (no
+// connection, or a server error), so the same request can work later.
+type Error struct {
+	Message string
+	Retry   bool
+}
 
 func (e *Error) Error() string { return e.Message }
 
 // Errorf makes an Error.
-func Errorf(format string, args ...any) error { return &Error{fmt.Sprintf(format, args...)} }
+func Errorf(format string, args ...any) error { return &Error{Message: fmt.Sprintf(format, args...)} }
 
 // Version is sortdo's version, sent in the User-Agent header.
 var Version = "dev"
@@ -93,7 +97,7 @@ func send(request *http.Request) (int, map[string]any, error) {
 	request.Header.Set("user-agent", userAgent())
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return 0, nil, Errorf("Could not reach %s: %v", request.URL.Host, unwrap(err))
+		return 0, nil, &Error{Message: fmt.Sprintf("Could not reach %s: %v", request.URL.Host, unwrap(err)), Retry: true}
 	}
 	defer response.Body.Close()
 	body := map[string]any{}
@@ -201,7 +205,7 @@ func PollDevice(origin string, pending *store.Pending) (place string, keychainEr
 		case "expired_token":
 			return "", nil, Errorf("The code expired. Run sortdo login%s again.", ServerFlag(origin))
 		}
-		return "", nil, Errorf("The sign-in failed: %s", reason(body, status))
+		return "", nil, &Error{Message: fmt.Sprintf("The sign-in failed: %s", reason(body, status)), Retry: status >= 500}
 	}
 	return "", nil, Errorf("The code expired. Run sortdo login%s again.", ServerFlag(origin))
 }
@@ -249,6 +253,9 @@ func AccessToken(origin string) (string, error) {
 	status, body, err := postForm(origin+"/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {current.RefreshToken}, "client_id": {ClientID}})
 	if err != nil {
 		return "", err
+	}
+	if status >= 500 || status == http.StatusTooManyRequests {
+		return "", &Error{Message: fmt.Sprintf("Could not refresh the sign-in: %s. Try again in a minute.", reason(body, status)), Retry: true}
 	}
 	if status != http.StatusOK || Text(body, "access_token") == "" {
 		store.DeleteTokens(origin)
